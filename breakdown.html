@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Breakdown Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-database-compat.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f9f9fb;
+      padding: 2rem;
+      color: #333;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+    }
+
+    label, select, input[type="range"] {
+      margin: 0.5rem 0.5rem 1rem 0;
+      padding: 0.4rem 0.6rem;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background-color: #fff;
+    }
+
+    button {
+      background-color: #0077cc;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 12px;
+      margin-top: 1rem;
+    }
+
+    th {
+      background-color: #e0e0e0;
+      padding: 10px;
+      text-align: left;
+      border-radius: 6px 6px 0 0;
+    }
+
+    td {
+      background-color: white;
+      padding: 10px;
+      border-radius: 0 0 6px 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    tr:hover {
+      transform: scale(1.01);
+      transition: transform 0.2s ease;
+    }
+
+    .highlight-red td {
+      background-color: #ffe5e5 !important;
+      border-left: 4px solid #cc0000;
+    }
+
+    #diagnostics {
+      margin-top: 2rem;
+      background-color: #fff;
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+
+    .back-button {
+      display: inline-block;
+      margin-top: 2rem;
+      text-decoration: none;
+      background-color: #0077cc;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+
+    .back-button:hover {
+      background-color: #005fa3;
+    }
+  </style>
+</head>
+<body>
+  <h1>Skill Deduction Breakdown</h1>
+
+  <label>Filter by Event:</label>
+  <select id="eventFilter" onchange="applyFilters()">
+    <option value="">All Events</option>
+    <option value="FX">FX</option>
+    <option value="PH">PH</option>
+    <option value="SR">SR</option>
+    <option value="VT">VT</option>
+    <option value="PB">PB</option>
+    <option value="HB">HB</option>
+  </select>
+
+  <label>Filter by Name:</label>
+  <select id="userFilter" onchange="applyFilters()">
+    <option value="">All Users</option>
+  </select>
+
+  <label>Show submissions from the past <span id="dayLabel">14</span> days:</label>
+  <input type="range" id="dayRange" min="0" max="60" value="14" oninput="updateDayLabel()" />
+
+  <button onclick="downloadAllData()">Download All Submissions</button>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Skill</th>
+        <th>Submissions</th>
+        <th>Avg Value</th>
+        <th>Avg Deduction</th>
+        <th>Max Deduction</th>
+        <th>Min Deduction</th>
+      </tr>
+    </thead>
+    <tbody id="breakdownTableBody"></tbody>
+  </table>
+
+  <h3>Overall Diagnostics</h3>
+  <div id="diagnostics"></div>
+
+  <a href="index.html" class="back-button">← Back to Dashboard</a>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3cJtk0c42pNAr3tsi_gQ7_9KcQS-HvgA",
+      authDomain: "extracker-d2148.firebaseapp.com",
+      projectId: "extracker-d2148",
+      storageBucket: "extracker-d2148.appspot.com",
+      messagingSenderId: "203023038950",
+      appId: "1:203023038950:web:bc5cc0633c129e0cb2fe27",
+      measurementId: "G-XPQ7THPEKD"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let allData = [];
+    const userMap = {};
+
+    db.ref('allSubmissions').once('value').then(snapshot => {
+      snapshot.forEach(child => {
+        const entry = child.val();
+        const uid = entry.userId;
+        const name = entry.userName || "Unnamed User";
+        if (uid) {
+          userMap[uid] = name;
+        }
+        allData.push(entry);
+      });
+
+      const nameSelect = document.getElementById("userFilter");
+      Object.entries(userMap).sort((a, b) => a[1].localeCompare(b[1])).forEach(([uid, name]) => {
+        const option = document.createElement("option");
+        option.value = uid;
+        option.textContent = name;
+        nameSelect.appendChild(option);
+      });
+
+      applyFilters();
+    });
+
+    function updateDayLabel() {
+      const days = document.getElementById("dayRange").value;
+      document.getElementById("dayLabel").textContent = days;
+      applyFilters();
+    }
+
+    function applyFilters() {
+      const event = document.getElementById("eventFilter").value;
+      const selectedUserId = document.getElementById("userFilter").value;
+      const days = parseInt(document.getElementById("dayRange").value);
+      const cutoff = days > 0 ? Date.now() - (days * 24 * 60 * 60 * 1000) : null;
+
+      const filtered = allData.filter(entry => {
+        if (event && entry.event !== event) return false;
+        if (selectedUserId && entry.userId !== selectedUserId) return false;
+        if (cutoff && entry.timestamp < cutoff) return false;
+        return true;
+      });
+
+      const skillStats = {};
+      let totalDeduction = 0;
+      let totalCount = 0;
+      let maxDeduction = -Infinity;
+      let minDeduction = Infinity;
+      const skillFrequency = {};
+
+      filtered.forEach(entry => {
+        const skill = entry.skill?.trim();
+        const deduction = parseFloat(entry.deduction);
+        const value = parseFloat(entry.value);
+        if (!skill || isNaN(deduction)) return;
+
+        if (!skillStats[skill]) {
+          skillStats[skill] = { count: 0, totalDeduction: 0, totalValue: 0, max: deduction, min: deduction, values: [] };
+        }
+
+        skillStats[skill].count++;
+        skillStats[skill].totalDeduction += deduction;
+        skillStats[skill].totalValue += isNaN(value) ? 0 : value;
+        skillStats[skill].max = Math.max(skillStats[skill].max, deduction);
+        skillStats[skill].min = Math.min(skillStats[skill].min, deduction);
+        if (!isNaN(value)) skillStats[skill].values.push(value);
+
+        totalDeduction += deduction;
+        totalCount++;
+        skillFrequency[skill] = (skillFrequency[skill] || 0) + 1;
+
+        maxDeduction = Math.max(maxDeduction, deduction);
+        minDeduction = Math.min(minDeduction, deduction);
+      });
+
+      const tbody = document.getElementById("breakdownTableBody");
+      tbody.innerHTML = "";
+      Object.entries(skillStats).forEach(([skill, stats]) => {
+        const avgDeduction = (stats.totalDeduction / stats.count).toFixed(2);
+        const avgValue = stats.values.length ? (stats.totalValue / stats.values.length).toFixed(2) : "N/A";
+        const highlight = parseFloat(avgDeduction) > parseFloat(avgValue) ? "highlight-red" : "";
+
+        const row = document.createElement("tr");
+        row.className = highlight;
+          row.innerHTML = `
+          <td>${skill}</td>
+          <td>${stats.count}</td>
+          <td>${avgValue}</td>
+          <td>${avgDeduction}</td>
+          <td>${stats.max}</td>
+          <td>${stats.min}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      const mostFrequent = Object.entries(skillFrequency).sort((a, b) => b[1] - a[1])[0];
+      const diagnostics = document.getElementById("diagnostics");
+      diagnostics.innerHTML = `
+        <p><strong>Total Submissions:</strong> ${totalCount}</p>
+        <p><strong>Overall Avg Deduction:</strong> ${(totalDeduction / totalCount).toFixed(2)}</p>
+        <p><strong>Highest Deduction:</strong> ${maxDeduction}</p>
+        <p><strong>Lowest Deduction:</strong> ${minDeduction}</p>
+        <p><strong>Most Frequent Skill:</strong> ${mostFrequent ? mostFrequent[0] + " (" + mostFrequent[1] + ")" : "N/A"}</p>
+      `;
+    }
+
+    function downloadAllData() {
+      const rows = [["User Name", "User ID", "Event", "Skill", "Value", "Deduction", "Timestamp"]];
+      let totalDeduction = 0;
+      let totalCount = 0;
+      let maxDeduction = -Infinity;
+      let minDeduction = Infinity;
+      const skillFrequency = {};
+
+      firebase.database().ref('allSubmissions').once('value').then(snapshot => {
+        snapshot.forEach(child => {
+          const entry = child.val();
+          const deduction = parseFloat(entry.deduction);
+          const skill = entry.skill?.trim();
+
+          rows.push([
+            entry.userName || "Unknown",
+            entry.userId || "",
+            entry.event || "",
+            skill || "",
+            entry.value ?? "",
+            deduction ?? "",
+            new Date(entry.timestamp).toLocaleString()
+          ]);
+
+          if (!isNaN(deduction)) {
+            totalDeduction += deduction;
+            totalCount++;
+            maxDeduction = Math.max(maxDeduction, deduction);
+            minDeduction = Math.min(minDeduction, deduction);
+            if (skill) skillFrequency[skill] = (skillFrequency[skill] || 0) + 1;
+          }
+        });
+
+        rows.push([]);
+        rows.push(["Diagnostics Summary"]);
+        rows.push(["Total Submissions", totalCount]);
+        rows.push(["Overall Avg Deduction", (totalDeduction / totalCount).toFixed(2)]);
+        rows.push(["Highest Deduction", maxDeduction]);
+        rows.push(["Lowest Deduction", minDeduction]);
+
+        const mostFrequent = Object.entries(skillFrequency).sort((a, b) => b[1] - a[1])[0];
+        if (mostFrequent) {
+          rows.push(["Most Frequent Skill", `${mostFrequent[0]} (${mostFrequent[1]})`]);
+        }
+
+        const now = new Date();
+        const dateStr = now.toISOString().split("T")[0];
+        const filename = `all_submissions_${dateStr}.csv`;
+
+        const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+    }
+  </script>
+</body>
+</html>
