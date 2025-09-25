@@ -4,8 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EX Tracker - Home</title>
-  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-auth-compat.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -31,7 +29,7 @@
       font-size: 1.1rem;
     }
 
-    #loginBtn {
+    button {
       padding: 10px 20px;
       background-color: #0077cc;
       color: white;
@@ -42,7 +40,7 @@
       margin-bottom: 1rem;
     }
 
-    #loginBtn:hover {
+    button:hover {
       background-color: #005fa3;
     }
 
@@ -69,11 +67,16 @@
     #dashboardLink {
       display: none;
     }
+
+    #logoutBtn {
+      display: none;
+    }
   </style>
 </head>
 <body>
   <h1 id="welcomeUser">🤸‍♂️ Loading...</h1>
-  <button id="loginBtn" style="display: none;">Sign in with Google</button>
+  <button id="loginBtn" aria-label="Sign in with Google">Sign in with Google</button>
+  <button id="logoutBtn" aria-label="Sign out">Sign Out</button>
 
   <p>This is your landing hub. From here, you can navigate to your dashboard, manage events, or explore new features.</p>
 
@@ -82,7 +85,10 @@
     <a href="signup.html">Sign Up / Log In</a>
   </nav>
 
-  <script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.3.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.3.1/firebase-auth.js";
+
     const firebaseConfig = {
       apiKey: "AIzaSyD3cJtk0c42pNAr3tsi_gQ7_9KcQS-HvgA",
       authDomain: "extracker-d2148.firebaseapp.com",
@@ -90,38 +96,45 @@
       appId: "1:123456789012:web:abcdef123456"
     };
 
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
 
     const welcomeEl = document.getElementById("welcomeUser");
     const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
     const dashboardLink = document.getElementById("dashboardLink");
 
-    auth.onAuthStateChanged(user => {
+    onAuthStateChanged(auth, user => {
       if (user) {
         welcomeEl.textContent = `🤸‍♂️ Welcome back, ${user.displayName || user.email}`;
         loginBtn.style.display = "none";
+        logoutBtn.style.display = "inline-block";
         dashboardLink.style.display = "inline-block";
-
       } else {
         welcomeEl.textContent = "🤸‍♂️ Welcome, guest! Please sign in to access your dashboard.";
         loginBtn.style.display = "inline-block";
+        logoutBtn.style.display = "none";
         dashboardLink.style.display = "none";
       }
     });
 
     loginBtn.addEventListener("click", () => {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider)
+      const provider = new GoogleAuthProvider();
+      signInWithPopup(auth, provider)
         .then(result => {
           const user = result.user;
           welcomeEl.textContent = `🤸‍♂️ Welcome, ${user.displayName || user.email}`;
-          dashboardLink.style.display = "inline-block";
         })
         .catch(error => {
           console.error("Login failed:", error);
           welcomeEl.textContent = "Login failed. Please try again.";
         });
+    });
+
+    logoutBtn.addEventListener("click", () => {
+      signOut(auth).catch(error => {
+        console.error("Logout failed:", error);
+      });
     });
   </script>
 </body>
