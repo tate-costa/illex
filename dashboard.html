@@ -107,6 +107,15 @@
 </head>
 <body>
   <h2>User Dashboard</h2>
+  <button onclick="openRoutineEditor()">Edit Routine</button>
+
+  <div id="routineEditor" style="display:none; padding:1rem; background:#fff; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); margin-top:1rem;">
+  <h3>Edit Routine for <span id="routineEventLabel"></span></h3>
+  <div id="routineInputs"></div>
+  <button onclick="saveRoutine()">Save Routine</button>
+  <button onclick="closeRoutineEditor()">Cancel</button>
+</div>
+
 
   <select id="eventSelect" onchange="renderSubmissionRows()">
     <option value="">Select Event</option>
@@ -221,41 +230,35 @@ function renderSubmissionRows() {
   const container = document.getElementById("submissionRows");
   container.innerHTML = "";
   const event = document.getElementById("eventSelect").value;
-  let labels = [];
+  if (!event) return;
 
-  if (event === "VT") {
-    labels = ["Preflight", "In Air", "Landing"];
-  } else if (event) {
-    labels = Array.from({ length: 8 }, (_, i) => `Skill ${i + 1}`);
-  }
+  db.ref(`users/${currentUserId}/routines/${event}`).once('value').then(snapshot => {
+    const routine = snapshot.val() || [];
+    const labels = event === "VT"
+      ? ["Preflight", "In Air", "Landing"]
+      : Array.from({ length: 8 }, (_, i) => i === 7 ? "Dismount" : `Skill ${i + 1}`);
+
+    labels.forEach((label, i) => {
+      const row = document.createElement("div");
+      row.style = "background:#fff; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.08); padding:12px; margin-bottom:12px;";
+
+      const skill = routine[i]?.skill || "";
+      const value = routine[i]?.value || "";
+
+      row.innerHTML = `
+        <strong>${label}</strong><br>
+        <input class="skillInput" value="${skill}" list="skillSuggestions" />
+        <input type="number" class="valueInput" value="${value}" list="valueSuggestions" />
+        <input type="number" placeholder="Deduction" class="deductionInput" />
+        <hr>
+      `;
+      container.appendChild(row);
+    });
+  });
 
   updateSkillSuggestions(event);
-
-labels.forEach((label, index) => {
-  const skillLabel = (event !== "VT" && index === 7) ? "Dismount" : `Skill ${index + 1}`;
-
-  const row = document.createElement("div");
-  row.style.backgroundColor = "#fff";
-  row.style.borderRadius = "8px";
-  row.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
-  row.style.padding = "12px";
-  row.style.marginBottom = "12px";
-
-  const skillInput = event === "VT"
-    ? `<input class="skillInput" value="${label}" readonly />`
-    : `<input placeholder="${skillLabel}" class="skillInput" list="skillSuggestions" />`;
-
-  row.innerHTML = `
-    <strong>${skillLabel}</strong><br>
-    ${skillInput}
-    <input type="number" placeholder="Value" class="valueInput" list="valueSuggestions" />
-    <input type="number" placeholder="Deduction" class="deductionInput" />
-    <hr>
-  `;
-  container.appendChild(row);
-});
-
 }
+
 
 
     function submitAll() {
@@ -309,6 +312,49 @@ for (let i = 0; i < skills.length; i++) {
       document.getElementById("dayLabel").textContent = days;
       applyFilters();
     }
+    function openRoutineEditor() {
+  const event = document.getElementById("eventSelect").value;
+  if (!event) return alert("Select an event first.");
+  document.getElementById("routineEventLabel").textContent = event;
+
+  const container = document.getElementById("routineInputs");
+  container.innerHTML = "";
+
+  const labels = event === "VT"
+    ? ["Preflight", "In Air", "Landing"]
+    : Array.from({ length: 8 }, (_, i) => i === 7 ? "Dismount" : `Skill ${i + 1}`);
+
+  labels.forEach(label => {
+    const row = document.createElement("div");
+    row.innerHTML = `
+      <strong>${label}</strong><br>
+      <input placeholder="Skill" class="routineSkillInput" />
+      <input type="number" placeholder="Value" class="routineValueInput" />
+      <hr>
+    `;
+    container.appendChild(row);
+  });
+
+  document.getElementById("routineEditor").style.display = "block";
+}
+function saveRoutine() {
+  const event = document.getElementById("eventSelect").value;
+  const skills = document.querySelectorAll(".routineSkillInput");
+  const values = document.querySelectorAll(".routineValueInput");
+
+  const routine = [];
+  for (let i = 0; i < skills.length; i++) {
+    const skill = skills[i].value.trim();
+    const value = parseFloat(values[i].value);
+    if (!skill || isNaN(value)) continue;
+    routine.push({ skill, value });
+  }
+
+  db.ref(`users/${currentUserId}/routines/${event}`).set(routine);
+  closeRoutineEditor();
+  alert("Routine saved!");
+}
+
 
 function applyFilters() {
   const event = document.getElementById("filterEvent").value;
