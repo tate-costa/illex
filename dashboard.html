@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>User Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-database-compat.js"></script>
+  <style>
+
+    .timestamp-accent {
+  width: 6px;
+  height: 100%;
+  background-color: #888;
+  display: inline-block;
+  margin-right: 8px;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+    
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f9f9fb;
+      padding: 2rem;
+      color: #333;
+    }
+
+    h2 {
+      margin-bottom: 1rem;
+    }
+
+    select, input[type="range"], input[type="text"], input[type="number"], button {
+      margin: 0.5rem 0.5rem 1rem 0;
+      padding: 0.4rem 0.6rem;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      background-color: #0077cc;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 12px;
+    }
+
+    th {
+      background-color: #e0e0e0;
+      padding: 10px;
+      text-align: left;
+      border-radius: 6px 6px 0 0;
+    }
+
+    td {
+      background-color: white;
+      padding: 10px;
+      border-radius: 0 0 6px 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    tr:hover {
+      transform: scale(1.01);
+      transition: transform 0.2s ease;
+    }
+
+    #submissionRows input {
+      margin: 4px 0;
+      width: calc(100% - 12px);
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #ddd;
+      margin: 12px 0;
+    }
+    
+    .timestamp-group td:first-child {
+  border-left: 4px solid #888;
+}
+
+  </style>
+</head>
+<body>
+  <h2>User Dashboard</h2>
+
+  <select id="eventSelect" onchange="renderSubmissionRows()">
+    <option value="">Select Event</option>
+    <option value="FX">FX</option>
+    <option value="PH">PH</option>
+    <option value="SR">SR</option>
+    <option value="VT">VT</option>
+    <option value="PB">PB</option>
+    <option value="HB">HB</option>
+  </select>
+
+  <datalist id="skillSuggestions"></datalist>
+  <datalist id="valueSuggestions"></datalist>
+
+  <div id="submissionRows"></div>
+ <label style="margin-left: 1rem;">
+  <input type="checkbox" id="routineBatchCheckbox" />
+  Routine?
+</label>
+<button onclick="submitAll()">Submit All</button>
+
+
+  <br><br>
+  <label for="dayRange">Show submissions from the past <span id="dayLabel">14</span> days:</label>
+  <input type="range" id="dayRange" min="0" max="60" value="14" oninput="updateDayLabel()" />
+  <input id="filterEvent" placeholder="Filter by event" />
+  <label>
+  <input type="checkbox" id="routineFilter" onchange="applyFilters()" />
+  Show only routines
+</label>
+
+  <button onclick="applyFilters()">Apply Filters</button>
+
+  <table>
+    <thead>
+<tr><th></th><th>Event</th><th>Skill</th><th>Value</th><th>Deduction</th><th>Routine?</th><th>Timestamp</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="breakdownTableBody"></tbody>
+  </table>
+
+  <br>
+  <input id="adminCode" placeholder="Enter admin code" />
+  <button onclick="checkAdminCode()">Go to Admin</button>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3cJtk0c42pNAr3tsi_gQ7_9KcQS-HvgA",
+      authDomain: "extracker-d2148.firebaseapp.com",
+      projectId: "extracker-d2148",
+      storageBucket: "extracker-d2148.appspot.com",
+      messagingSenderId: "203023038950",
+      appId: "1:203023038950:web:bc5cc0633c129e0cb2fe27",
+      measurementId: "G-XPQ7THPEKD"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.database();
+    let currentUserId = null;
+
+const eventColorMap = {
+  FX: "#fce4ec",
+  PH: "#e3f2fd",
+  SR: "#e8f5e9",
+  VT: "#fff3e0",
+  PB: "#f3e5f5",
+  HB: "#fbe9e7"
+};
+
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUserId = user.uid;
+        loadUserSubmissions();
+      } else {
+        window.location.href = "index.html";
+      }
+    });
+
+    function updateSkillSuggestions(eventType) {
+      const ref = db.ref('users/' + currentUserId + '/submissions');
+      ref.once('value').then(snapshot => {
+        const skillSet = new Set();
+        const valueSet = new Set();
+
+        snapshot.forEach(child => {
+          const entry = child.val();
+          if (entry.event === eventType) {
+            if (entry.skill) skillSet.add(entry.skill.trim());
+            if (!isNaN(entry.value)) valueSet.add(entry.value);
+          }
+        });
+
+        const skillList = document.getElementById("skillSuggestions");
+        skillList.innerHTML = "";
+        Array.from(skillSet).sort().forEach(skill => {
+          const option = document.createElement("option");
+          option.value = skill;
+          skillList.appendChild(option);
+        });
+
+        const valueList = document.getElementById("valueSuggestions");
+        valueList.innerHTML = "";
+        Array.from(valueSet).sort((a, b) => a - b).forEach(value => {
+          const option = document.createElement("option");
+          option.value = value;
+          valueList.appendChild(option);
+        });
+      });
+    }
+
+function renderSubmissionRows() {
+  const container = document.getElementById("submissionRows");
+  container.innerHTML = "";
+  const event = document.getElementById("eventSelect").value;
+  let labels = [];
+
+  if (event === "VT") {
+    labels = ["Preflight", "In Air", "Landing"];
+  } else if (event) {
+    labels = Array.from({ length: 8 }, (_, i) => `Skill ${i + 1}`);
+  }
+
+  updateSkillSuggestions(event);
+
+  labels.forEach(label => {
+    const row = document.createElement("div");
+    row.style.backgroundColor = "#fff";
+    row.style.borderRadius = "8px";
+    row.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
+    row.style.padding = "12px";
+    row.style.marginBottom = "12px";
+
+    const skillInput = event === "VT"
+      ? `<input class="skillInput" value="${label}" readonly />`
+      : `<input placeholder="Skill" class="skillInput" list="skillSuggestions" />`;
+
+row.innerHTML = `
+  <strong>${label}</strong><br>
+  ${skillInput}
+  <input type="number" placeholder="Value" class="valueInput" list="valueSuggestions" />
+  <input type="number" placeholder="Deduction" class="deductionInput" />
+  <label><input type="checkbox" class="routineCheckbox" /> Routine?</label>
+  <hr>
+`;
+
+    container.appendChild(row);
+  });
+}
+
+
+function submitAll() {
+  const event = document.getElementById("eventSelect").value;
+  if (!event) return alert("Select an event first.");
+
+  const user = firebase.auth().currentUser;
+  const userName = user.displayName || user.email || "Unknown";
+const isRoutine = document.getElementById("routineBatchCheckbox").checked;
+...
+routine: isRoutine
+
+  const skills = document.querySelectorAll(".skillInput");
+  const values = document.querySelectorAll(".valueInput");
+  const deductions = document.querySelectorAll(".deductionInput");
+
+  for (let i = 0; i < skills.length; i++) {
+    const skill = skills[i].value.trim();
+    const value = parseFloat(values[i].value);
+    const deduction = parseFloat(deductions[i].value);
+
+    if (!skill || isNaN(value) || isNaN(deduction)) continue;
+
+    const submission = {
+      userId: currentUserId,
+      userName: userName,
+      event,
+      skill,
+      value,
+      deduction,
+      routine: isRoutine, // ✅ applies to all
+      timestamp: Date.now()
+    };
+
+    const ref = db.ref('users/' + currentUserId + '/submissions').push();
+    const id = ref.key;
+    ref.set(submission);
+    db.ref('allSubmissions/' + id).set(submission);
+  }
+
+  alert("Submissions saved!");
+  renderSubmissionRows();
+}
+
+
+        function updateDayLabel() {
+      const days = document.getElementById("dayRange").value;
+      document.getElementById("dayLabel").textContent = days;
+      applyFilters();
+    }
+
+function applyFilters() {
+  const event = document.getElementById("filterEvent").value;
+  const days = parseInt(document.getElementById("dayRange").value);
+  const routineOnly = document.getElementById("routineFilter").checked;
+  const cutoff = days > 0 ? Date.now() - (days * 24 * 60 * 60 * 1000) : null;
+
+  loadUserSubmissions(event, cutoff, routineOnly);
+}
+
+
+function loadUserSubmissions(eventFilter = null, dateFilter = null, routineOnly = false) {
+  const ref = db.ref('users/' + currentUserId + '/submissions').orderByChild('timestamp');
+  ref.on('value', snapshot => {
+    const tbody = document.getElementById("breakdownTableBody");
+    tbody.innerHTML = "";
+    const filtered = [];
+
+    snapshot.forEach(child => {
+      const data = child.val();
+      const key = child.key;
+      let valid = true;
+      if (eventFilter && data.event !== eventFilter) valid = false;
+      if (dateFilter && data.timestamp < dateFilter) valid = false;
+      if (routineOnly && !data.routine) valid = false;
+      if (valid) filtered.push({ key, data });
+    });
+
+    filtered.sort((a, b) => b.data.timestamp - a.data.timestamp);
+
+const timestampColorMap = {};
+let colorIndex = 0;
+
+filtered.forEach(({ key, data }) => {
+  const event = data.event;
+  const accentColor = eventColorMap[event] || "#ddd"; // fallback color
+
+  const row = document.createElement("tr");
+
+row.innerHTML = `
+  <td style="background-color: ${accentColor}; width: 6px;"></td>
+  <td><input value="${event}" data-id="${key}" data-field="event" /></td>
+  <td><input value="${data.skill}" data-id="${key}" data-field="skill" list="skillSuggestions" /></td>
+  <td><input type="number" value="${data.value}" data-id="${key}" data-field="value" list="valueSuggestions" /></td>
+  <td><input type="number" value="${data.deduction}" data-id="${key}" data-field="deduction" /></td>
+<td>${data.routine ? "✅" : ""}</td>
+
+  <td>${new Date(data.timestamp).toLocaleString()}</td>
+  <td>
+    <button onclick="updateSubmission('${key}')">💾</button>
+    <button onclick="deleteSubmission('${key}')">🗑️</button>
+  </td>
+`;
+
+  tbody.appendChild(row);
+});
+
+
+
+  });
+}
+
+
+
+    function updateSubmission(id) {
+      const inputs = document.querySelectorAll(`[data-id="${id}"]`);
+      const updated = {};
+      inputs.forEach(input => {
+        const field = input.getAttribute("data-field");
+        updated[field] = field === "value" || field === "deduction" ? parseFloat(input.value) : input.value;
+      });
+      db.ref('users/' + currentUserId + '/submissions/' + id).update(updated);
+      db.ref('allSubmissions/' + id).update(updated);
+    }
+
+    function deleteSubmission(id) {
+      if (confirm("Delete this submission?")) {
+        db.ref('users/' + currentUserId + '/submissions/' + id).remove();
+        db.ref('allSubmissions/' + id).remove();
+      }
+    }
+
+    function checkAdminCode() {
+      const code = document.getElementById("adminCode").value.trim();
+      if (code === "gymnastics") {
+        window.location.href = "breakdown.html";
+      } else {
+        alert("Invalid code.");
+      }
+    }
+  </script>
+</body>
+</html>
