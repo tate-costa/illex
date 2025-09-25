@@ -87,6 +87,21 @@
     .timestamp-group td:first-child {
   border-left: 4px solid #888;
 }
+    .back-button {
+  display: inline-block;
+  margin-top: 2rem;
+  text-decoration: none;
+  background-color: #0077cc;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.back-button:hover {
+  background-color: #005fa3;
+}
+
 
   </style>
 </head>
@@ -107,12 +122,11 @@
   <datalist id="valueSuggestions"></datalist>
 
   <div id="submissionRows"></div>
- <label style="margin-left: 1rem;">
+  <label style="margin-left: 1rem;">
   <input type="checkbox" id="routineBatchCheckbox" />
   Routine?
 </label>
-<button onclick="submitAll()">Submit All</button>
-
+  <button onclick="submitAll()">Submit All</button>
 
   <br><br>
   <label for="dayRange">Show submissions from the past <span id="dayLabel">14</span> days:</label>
@@ -132,9 +146,10 @@
     <tbody id="breakdownTableBody"></tbody>
   </table>
 
+  <a href="breakdown.html" class="back-button">Go to Breakdown</a>
+
   <br>
-  <input id="adminCode" placeholder="Enter admin code" />
-  <button onclick="checkAdminCode()">Go to Admin</button>
+
 
   <script>
     const firebaseConfig = {
@@ -216,74 +231,78 @@ function renderSubmissionRows() {
 
   updateSkillSuggestions(event);
 
-  labels.forEach(label => {
-    const row = document.createElement("div");
-    row.style.backgroundColor = "#fff";
-    row.style.borderRadius = "8px";
-    row.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
-    row.style.padding = "12px";
-    row.style.marginBottom = "12px";
+labels.forEach((label, index) => {
+  const skillLabel = (event !== "VT" && index === 7) ? "Dismount" : `Skill ${index + 1}`;
 
-    const skillInput = event === "VT"
-      ? `<input class="skillInput" value="${label}" readonly />`
-      : `<input placeholder="Skill" class="skillInput" list="skillSuggestions" />`;
+  const row = document.createElement("div");
+  row.style.backgroundColor = "#fff";
+  row.style.borderRadius = "8px";
+  row.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
+  row.style.padding = "12px";
+  row.style.marginBottom = "12px";
 
-row.innerHTML = `
-  <strong>${label}</strong><br>
-  ${skillInput}
-  <input type="number" placeholder="Value" class="valueInput" list="valueSuggestions" />
-  <input type="number" placeholder="Deduction" class="deductionInput" />
-  <label><input type="checkbox" class="routineCheckbox" /> Routine?</label>
-  <hr>
-`;
+  const skillInput = event === "VT"
+    ? `<input class="skillInput" value="${label}" readonly />`
+    : `<input placeholder="${skillLabel}" class="skillInput" list="skillSuggestions" />`;
 
-    container.appendChild(row);
-  });
+  row.innerHTML = `
+    <strong>${skillLabel}</strong><br>
+    ${skillInput}
+    <input type="number" placeholder="Value" class="valueInput" list="valueSuggestions" />
+    <input type="number" placeholder="Deduction" class="deductionInput" />
+    <hr>
+  `;
+  container.appendChild(row);
+});
+
 }
 
 
-function submitAll() {
-  const event = document.getElementById("eventSelect").value;
-  if (!event) return alert("Select an event first.");
+    function submitAll() {
+      const event = document.getElementById("eventSelect").value;
+      if (!event) return alert("Select an event first.");
 
-  const user = firebase.auth().currentUser;
-  const userName = user.displayName || user.email || "Unknown";
-const isRoutine = document.getElementById("routineBatchCheckbox").checked;
-...
-routine: isRoutine
+      const user = firebase.auth().currentUser;
+      const userName = user.displayName || user.email || "Unknown";
 
-  const skills = document.querySelectorAll(".skillInput");
-  const values = document.querySelectorAll(".valueInput");
-  const deductions = document.querySelectorAll(".deductionInput");
+      const skills = document.querySelectorAll(".skillInput");
+      const values = document.querySelectorAll(".valueInput");
+      const deductions = document.querySelectorAll(".deductionInput");
+      const isRoutine = document.getElementById("routineBatchCheckbox").checked;
 
-  for (let i = 0; i < skills.length; i++) {
-    const skill = skills[i].value.trim();
-    const value = parseFloat(values[i].value);
-    const deduction = parseFloat(deductions[i].value);
 
-    if (!skill || isNaN(value) || isNaN(deduction)) continue;
+for (let i = 0; i < skills.length; i++) {
+  const skill = skills[i].value.trim();
+  const value = parseFloat(values[i].value);
+  const deduction = parseFloat(deductions[i].value);
 
-    const submission = {
-      userId: currentUserId,
-      userName: userName,
-      event,
-      skill,
-      value,
-      deduction,
-      routine: isRoutine, // ✅ applies to all
-      timestamp: Date.now()
-    };
+  // ✅ Define the position label
+  const skillLabel = (event !== "VT" && i === 7) ? "Dismount" : `Skill ${i + 1}`;
 
-    const ref = db.ref('users/' + currentUserId + '/submissions').push();
-    const id = ref.key;
-    ref.set(submission);
-    db.ref('allSubmissions/' + id).set(submission);
-  }
+  if (!skill || isNaN(value) || isNaN(deduction)) continue;
 
-  alert("Submissions saved!");
-  renderSubmissionRows();
+  const submission = {
+    userId: currentUserId,
+    userName: userName,
+    event,
+    skill,
+    value,
+    deduction,
+    routine: isRoutine,
+    label: skillLabel, // ✅ recorded in Firebase
+    timestamp: Date.now()
+  };
+
+  const ref = db.ref('users/' + currentUserId + '/submissions').push();
+  const id = ref.key;
+  ref.set(submission);
+  db.ref('allSubmissions/' + id).set(submission);
 }
 
+
+      alert("Submissions saved!");
+      renderSubmissionRows();
+    }
 
         function updateDayLabel() {
       const days = document.getElementById("dayRange").value;
@@ -335,8 +354,12 @@ row.innerHTML = `
   <td><input value="${data.skill}" data-id="${key}" data-field="skill" list="skillSuggestions" /></td>
   <td><input type="number" value="${data.value}" data-id="${key}" data-field="value" list="valueSuggestions" /></td>
   <td><input type="number" value="${data.deduction}" data-id="${key}" data-field="deduction" /></td>
-<td>${data.routine ? "✅" : ""}</td>
-
+  <td>
+    <label>
+      <input type="checkbox" ${data.routine ? "checked" : ""} data-id="${key}" data-field="routine" />
+      Routine?
+    </label>
+  </td>
   <td>${new Date(data.timestamp).toLocaleString()}</td>
   <td>
     <button onclick="updateSubmission('${key}')">💾</button>
@@ -372,14 +395,7 @@ row.innerHTML = `
       }
     }
 
-    function checkAdminCode() {
-      const code = document.getElementById("adminCode").value.trim();
-      if (code === "gymnastics") {
-        window.location.href = "breakdown.html";
-      } else {
-        alert("Invalid code.");
-      }
-    }
+
   </script>
 </body>
 </html>
